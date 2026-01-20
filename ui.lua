@@ -1,0 +1,205 @@
+local M = {}
+
+-- Namespace for virtual text
+local ns_id = vim.api.nvim_create_namespace("llm_copilot_ghost")
+
+-- State to track current suggestion
+local current_suggestion = {
+    text = nil,         -- Array of lines
+    start_pos = nil,    -- {row, col} where suggestion starts (1-based row, 0-based col)
+    bufnr = nil,        -- Buffer number
+}
+
+-- Show suggestion as ghost text (virtual text)
+-- @param bufnr number: Buffer number
+-- @param row number: Row position (1-based)
+-- @param col number: Column position (0-based)
+-- @param text string: Completion text (may contain newlines)
+function M.show_suggestion(bufnr, row, col, text)
+    -- Clear any existing suggestion first
+    M.clear_suggestion()
+
+    -- Split text into lines
+    local lines = vim.split(text, "\n", { plain = true })
+    
+    -- Filter out empty strings but keep the structure
+    local filtered_lines = {}
+    for _, line in ipairs(lines) do
+        table.insert(filtered_lines, line)
+    end
+    
+    if #filtered_lines == 0 then
+        return
+    end
+
+    -- Store suggestion state
+    current_suggestion.text = filtered_lines
+    current_suggestion.start_pos = {row, col}
+    current_suggestion.bufnr = bufnr
+
+    -- Show first line as inline virtual text at cursor position
+    if filtered_lines[1] and filtered_lines[1] ~= "" then
+        vim.api.nvim_buf_set_extmark(bufnr, ns_id, row - 1, col, {
+            virt_text = {{filtered_lines[1], "Comment"}},
+            virt_text_pos = "overlay",
+            hl_mode = "combine",
+        })
+    end
+
+    -- Show remaining lines as virtual lines below
+    if #filtered_lines > 1 then
+        for i = 2, #filtered_lines do
+            vim.api.nvim_buf_set_extmark(bufnr, ns_id, row - 1, 0, {
+                virt_lines = {{{filtered_lines[i], "Comment"}}},
+                virt_lines_above = false,
+            })
+        end
+    end
+end
+
+-- Clear ghost text suggestion
+-- @param bufnr number|nil: Buffer number (defaults to current suggestion's buffer)
+function M.clear_suggestion(bufnr)
+    bufnr = bufnr or current_suggestion.bufnr or vim.api.nvim_get_current_buf()
+    
+    vim.api.nvim_buf_clear_namespace(bufnr, ns_id, 0, -1)
+    
+    current_suggestion.text = nil
+    current_suggestion.start_pos = nil
+    current_suggestion.bufnr = nil
+end
+
+-- Check if there's an active suggestion
+-- @return boolean: True if suggestion is active
+function M.has_suggestion()
+    return current_suggestion.text ~= nil
+end
+
+-- Get current suggestion data
+-- @return table|nil: Current suggestion or nil
+function M.get_suggestion()
+    if not M.has_suggestion() then
+        return nil
+    end
+    
+    return {
+        text = current_suggestion.text,
+        start_pos = current_suggestion.start_pos,
+        bufnr = current_suggestion.bufnr,
+    }
+end
+
+-- Accept suggestion and write to buffer
+-- @return boolean: True if suggestion was accepted, false otherwise
+function M.accept_suggestion()
+    if not M.has_suggestion() then
+        return false
+    end
+
+    local bufnr = current_suggestion.bufnr
+    local row, col = unpack(current_suggestion.start_pos)
+    local lines = current_suggestion.text
+
+    -- Ensure we're in the correct buffer
+    if bufnr ~= vim.api.nvim_get_current_buf() then
+        vim.notify("Suggestion is for a different buffer", vim.log.levels.WARN)
+        M.clear_suggestion()
+        return false
+    end
+
+    -- Insert first line at cursor position
+    vim.api.nvim_buf_set_text(bufnr, row - 1, col, row - 1, col, {lines[1]})
+
+    -- Insert remaining lines below if multi-line
+    if #lines > 1 then
+        vim.api.nvim_buf_set_lines(
+            bufnr,
+            row,
+            row,
+            false,
+            vim.list_slice(lines, 2, #lines)
+        )
+    end
+
+    -- Calculate final cursor position
+    local final_row = row + #lines - 1
+    local final_col
+    
+    if #lines == 1 then
+        -- Single line: cursor goes to end of inserted text
+        final_col = col + #lines[1]
+    else
+        -- Multi-line: cursor goes to end of last line
+        final_col = #lines[#lines]
+    end
+    
+    -- Move cursor to end of insertion
+    vim.api.nvim_win_set_cursor(0, {final_row, final_col})
+
+    -- Clear the suggestion
+    M.clear_suggestion()
+    
+    return true
+end
+
+-- Setup keymaps for accepting/dismissing suggestions
+-- @param bufnr number: Buffer number to set keymaps on
+-- @param config table: Configuration with keymaps
+function M.setup_keymaps(bufnr, config)
+    local accept_key = config.keymaps.accept or "<Tab>"
+    local dismiss_key = config.keymaps.dismiss or "<Esc>"
+
+    -- Accept keymaps (both normal and insert mode)
+    vim.keymap.set("i", accept_key, function()
+        if M.accept_suggestion() then
+            return "" -- Accepted, stay in insert mode
+        else
+            return accept_key -- No suggestion, use default behavior
+        end
+    end, {
+        buffer = bufnr,
+        expr = true,
+        noremap = true,
+        silent = true,
+        desc = "LLM Copilot: Accept suggestion"
+    })
+    
+    vim.keymap.set("n", accept_key, function()
+        if M.accept_suggestion() then
+            -- After accepting, enter insert mode at end of insertion
+            vim.cmd("startinsert!")
+        end
+    end, {
+        buffer = bufnr,
+        noremap = true,
+        silent = true,
+        desc = "LLM Copilot: Accept suggestion"
+    })
+
+    -- Dismiss keymaps (both normal and insert mode)
+    vim.keymap.set("i", dismiss_key, function()
+        if M.has_suggestion() then
+            M.clear_suggestion()
+        end
+        return dismiss_key
+    end, {
+        buffer = bufnr,
+        expr = true,
+        noremap = true,
+        silent = true,
+        desc = "LLM Copilot: Dismiss suggestion"
+    })
+    
+    vim.keymap.set("n", dismiss_key, function()
+        if M.has_suggestion() then
+            M.clear_suggestion()
+        end
+    end, {
+        buffer = bufnr,
+        noremap = true,
+        silent = true,
+        desc = "LLM Copilot: Dismiss suggestion"
+    })
+end
+
+return M
