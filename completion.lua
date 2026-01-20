@@ -1,8 +1,8 @@
 local M = {}
 
-local ollama = require("llm-copilot.ollama")
-local ui = require("llm-copilot.ui")
-local config = require("llm-copilot.config")
+local ollama = require("code-copilot.ollama")
+local ui = require("code-copilot.ui")
+local config = require("code-copilot.config")
 
 -- State to track in-flight requests
 local current_request = {

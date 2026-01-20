@@ -1,7 +1,7 @@
 local M = {}
 
 -- Namespace for virtual text
-local ns_id = vim.api.nvim_create_namespace("llm_copilot_ghost")
+local ns_id = vim.api.nvim_create_namespace("code-copilot-ghost")
 
 -- State to track current suggestion
 local current_suggestion = {
@@ -150,18 +150,22 @@ function M.setup_keymaps(bufnr, config)
     local dismiss_key = config.keymaps.dismiss or "<Esc>"
 
     -- Accept keymaps (both normal and insert mode)
+    -- Use vim.schedule to defer buffer modification
     vim.keymap.set("i", accept_key, function()
-        if M.accept_suggestion() then
-            return "" -- Accepted, stay in insert mode
+        if M.has_suggestion() then
+            vim.schedule(function()
+                M.accept_suggestion()
+            end)
         else
-            return accept_key -- No suggestion, use default behavior
+            -- No suggestion, simulate default Tab behavior
+            local key = vim.api.nvim_replace_termcodes(accept_key, true, false, true)
+            vim.api.nvim_feedkeys(key, 'n', false)
         end
     end, {
         buffer = bufnr,
-        expr = true,
         noremap = true,
         silent = true,
-        desc = "LLM Copilot: Accept suggestion"
+        desc = "Code Copilot: Accept suggestion"
     })
     
     vim.keymap.set("n", accept_key, function()
@@ -173,21 +177,23 @@ function M.setup_keymaps(bufnr, config)
         buffer = bufnr,
         noremap = true,
         silent = true,
-        desc = "LLM Copilot: Accept suggestion"
+        desc = "Code Copilot: Accept suggestion"
     })
 
     -- Dismiss keymaps (both normal and insert mode)
     vim.keymap.set("i", dismiss_key, function()
         if M.has_suggestion() then
             M.clear_suggestion()
+        else
+            -- No suggestion, simulate default Esc behavior
+            local key = vim.api.nvim_replace_termcodes(dismiss_key, true, false, true)
+            vim.api.nvim_feedkeys(key, 'n', false)
         end
-        return dismiss_key
     end, {
         buffer = bufnr,
-        expr = true,
         noremap = true,
         silent = true,
-        desc = "LLM Copilot: Dismiss suggestion"
+        desc = "Code Copilot: Dismiss suggestion"
     })
     
     vim.keymap.set("n", dismiss_key, function()
@@ -198,7 +204,7 @@ function M.setup_keymaps(bufnr, config)
         buffer = bufnr,
         noremap = true,
         silent = true,
-        desc = "LLM Copilot: Dismiss suggestion"
+        desc = "Code Copilot: Dismiss suggestion"
     })
 end
 

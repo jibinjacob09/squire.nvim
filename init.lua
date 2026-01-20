@@ -1,8 +1,8 @@
 local M = {}
 
-local config = require("llm-copilot.config")
-local completion = require("llm-copilot.completion")
-local ui = require("llm-copilot.ui")
+local config = require("code-copilot.config")
+local completion = require("code-copilot.completion")
+local ui = require("code-copilot.ui")
 
 -- Track if plugin has been setup
 local is_setup = false
@@ -11,7 +11,7 @@ local is_setup = false
 -- @param user_config table|nil: User configuration
 function M.setup(user_config)
     if is_setup then
-        vim.notify("llm-copilot is already setup", vim.log.levels.WARN)
+        vim.notify("code-copilot is already setup", vim.log.levels.WARN)
         return
     end
 
@@ -25,7 +25,7 @@ function M.setup(user_config)
     is_setup = true
 
     if config.get().debug then
-        vim.notify("llm-copilot initialized successfully", vim.log.levels.INFO)
+        vim.notify("code-copilot initialized successfully", vim.log.levels.INFO)
     end
 
     -- Create user command for manual triggering
@@ -64,7 +64,7 @@ end
 
 -- Setup autocmds for buffer-specific keymaps
 function M.setup_autocmds()
-    local group = vim.api.nvim_create_augroup("LLMCopilot", { clear = true })
+    local group = vim.api.nvim_create_augroup("CodeCopilot", { clear = true })
 
     -- Setup accept/dismiss keymaps when entering a buffer
     vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter" }, {
