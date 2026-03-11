@@ -1,6 +1,6 @@
 local M = {}
 
-local ollama = require("code-copilot.ollama")
+local copilot = require("code-copilot.claude") -- anthropic/claude is the LLM
 local ui = require("code-copilot.ui")
 local config = require("code-copilot.config")
 
@@ -77,7 +77,7 @@ function M.request_completion(bufnr)
     local context = gather_context(bufnr)
     
     -- Build prompt
-    local prompt = ollama.build_prompt(context)
+    local prompt = copilot.build_prompt(context)
     
     if config.get().debug then
         vim.notify("Requesting completion...", vim.log.levels.INFO)
@@ -87,7 +87,7 @@ function M.request_completion(bufnr)
     local cursor_pos = vim.api.nvim_win_get_cursor(0)
     
     -- Request completion from Ollama
-    ollama.request_completion(config.get(), prompt, function(err, response)
+    copilot.request_completion(config.get(), prompt, function(err, response)
         -- Mark request as complete
         current_request.active = false
         current_request.bufnr = nil

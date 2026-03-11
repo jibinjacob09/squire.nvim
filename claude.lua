@@ -26,21 +26,24 @@ local function strip_code_fences(text)
     return text
 end
 
--- Make async HTTP request to Ollama
+-- Make async HTTP request to Claude API
 -- @param config table: Plugin configuration
--- @param prompt string: The prompt to send to Ollama
+-- @param prompt string: The prompt to send to Claude
 -- @param callback function: Called with (err, response_text)
 function M.request_completion(config, prompt, callback)
     local curl = require("plenary.curl")
-    local url = config.endpoint .. "/api/generate"
+    local url = "https://api.anthropic.com/v1/messages"
 
     local body = {
-        model = config.model,
-        prompt = prompt,
-        stream = false,
-        options = {
-            temperature = config.temperature or 0.2,
-            num_predict = config.max_tokens or 200,
+        model = config.model or "claude-sonnet-4-20250514",
+        max_tokens = config.max_tokens or 200,
+        temperature = config.temperature or 0.2,
+        system = "You are an accurate, efficent code completion engine. Output ONLY the raw code to be inserted at the cursor. No explanations, no markdown fences, no commentary — just the code. Avoid importing unneeded libraries, prioritze efficent but readable code.",
+        messages = {
+            {
+                role = "user",
+                content = prompt,
+            },
         },
     }
 
@@ -48,12 +51,14 @@ function M.request_completion(config, prompt, callback)
         body = vim.fn.json_encode(body),
         headers = {
             ["Content-Type"] = "application/json",
+            ["x-api-key"] = config.api_key,
+            ["anthropic-version"] = "2023-06-01",
         },
         timeout = config.timeout_ms or 15000,
         callback = function(response)
             vim.schedule(function()
                 if response.status ~= 200 then
-                    callback("HTTP error: " .. tostring(response.status), nil)
+                    callback("HTTP error: " .. tostring(response.status) .. " — " .. tostring(response.body), nil)
                     return
                 end
 
@@ -63,12 +68,15 @@ function M.request_completion(config, prompt, callback)
                     return
                 end
 
-                if decoded.response then
-                    -- Strip code fences before returning
-                    local cleaned = strip_code_fences(decoded.response)
+                local text = decoded.content
+                    and decoded.content[1]
+                    and decoded.content[1].text
+
+                if text then
+                    local cleaned = strip_code_fences(text)
                     callback(nil, cleaned)
                 else
-                    callback("No response field in Ollama output", nil)
+                    callback("No content in Claude response", nil)
                 end
             end)
         end,
@@ -80,7 +88,7 @@ function M.request_completion(config, prompt, callback)
     })
 end
 
--- Build the prompt to send to Ollama
+-- Build the prompt to send to Claude
 -- @param context table: Contains file_content, cursor, filetype
 -- @return string: The formatted prompt
 function M.build_prompt(context)
@@ -110,19 +118,21 @@ function M.build_prompt(context)
     local indent = current_prefix:match("^%s*") or ""
 
     local prompt = string.format(
-        [[You are a code completion engine.
-Complete the code at the cursor position.
+        [[Complete the code at the <CURSOR> position.
 
 Language: %s
+Current indentation: "%s"
 
 Rules:
-- Output ONLY the code to be inserted
-- Do NOT repeat existing code
-- Match the surrounding style
-- Maintain the current indentation
-- You may complete multiple lines if appropriate
-
-Current indentation: "%s"
+- Output ONLY the code to insert at <CURSOR> — nothing before it
+- Do NOT repeat any code that already exists, before or after the cursor
+- Match the surrounding code style and conventions
+- Preserve the current indentation level
+- You may complete multiple lines if the context calls for it
+- if the instruction is to write docstring,  then analyze the function where the cursor is and write only docstring,  NO code
+- if the instruction is to write tests for a specific function, then 
+- 1. list out the appropriate test cases suitable for the function
+- 2. automate the listed test case using the appropriate testing framework (pytest, jest, cypress, etc,)
 
 Code:
 %s<CURSOR>]],
@@ -250,17 +260,17 @@ function M.setup_suggestion_keymaps(bufnr)
     })
 end
 
--- Test config
+-- Config — set your API key here or load from environment
 local test_config = {
-    endpoint = "http://localhost:9000",
-    model = "devstral",
+    api_key = os.getenv("ANTHROPIC_COPILOT_API_KEY") or "YOUR_API_KEY_HERE",
+    model = "claude-sonnet-4-20250514",
     temperature = 0.2,
     max_tokens = 200,
     timeout_ms = 15000,
 }
 
 -- Test command
-vim.api.nvim_create_user_command("CopilotDevstralTest", function()
+vim.api.nvim_create_user_command("CopilotClaudeTest", function()
     local buf = vim.api.nvim_get_current_buf()
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local file_content = table.concat(lines, "\n")
@@ -280,7 +290,7 @@ vim.api.nvim_create_user_command("CopilotDevstralTest", function()
 
     local prompt = M.build_prompt(context)
 
-    vim.notify("Sending request to Ollama...", vim.log.levels.INFO)
+    vim.notify("Sending request to Claude...", vim.log.levels.INFO)
 
     M.request_completion(test_config, prompt, function(err, res)
         if err then

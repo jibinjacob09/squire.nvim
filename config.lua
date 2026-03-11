@@ -2,11 +2,11 @@ local M = {}
 
 -- Default configuration
 M.defaults = {
-    -- Ollama settings
-    model = "devstralCoPilot",
-    endpoint = "http://localhost:11434",
+    -- Claude settings
+    api_key = os.getenv("ANTHROPIC_COPILOT_API_KEY"),
+    model = "claude-sonnet-4-20250514",
     temperature = 0.2,
-    max_tokens = 200,
+    max_tokens = 2000,
     timeout_ms = 15000,
 
     -- Keymaps
@@ -63,10 +63,10 @@ end
 
 -- Validate configuration values
 function M.validate()
-    -- Check endpoint format
-    if not M.options.endpoint:match("^https?://") then
+    -- Check API key is set
+    if not M.options.api_key or M.options.api_key == "" then
         vim.notify(
-            "code-copilot: endpoint must start with http:// or https://",
+            "code-copilot: ANTHROPIC_API_KEY is not set",
             vim.log.levels.WARN
         )
     end
