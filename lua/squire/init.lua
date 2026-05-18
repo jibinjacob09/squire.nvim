@@ -20,6 +20,7 @@ function M.setup(user_config)
 	config.setup(user_config)
 
 	-- Setup keymaps and autocmds
+	M.setup_keymaps()
 	M.setup_autocmds()
 
 	is_setup = true
@@ -64,6 +65,32 @@ function M.setup(user_config)
 			end
 		end)
 	end, { desc = "run healthcheck on squire app" })
+end
+
+-- Setup global keymaps for manual trigger
+function M.setup_keymaps()
+	local cfg = config.get()
+	local manual_key = cfg.keymaps.manual or "<leader><space>"
+
+	-- Manual trigger in insert mode
+	vim.keymap.set("i", manual_key, function()
+		M.trigger_completion()
+		return ""
+	end, {
+		expr = true,
+		noremap = true,
+		silent = true,
+		desc = "Squire: Trigger completion",
+	})
+
+	-- Manual trigger in normal mode
+	vim.keymap.set("n", manual_key, function()
+		M.trigger_completion()
+	end, {
+		noremap = true,
+		silent = true,
+		desc = "Squire: Trigger completion",
+	})
 end
 
 -- Setup autocmds for buffer-specific keymaps

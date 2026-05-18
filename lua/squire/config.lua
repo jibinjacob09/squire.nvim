@@ -68,7 +68,7 @@ end
 function M.validate()
 	-- Check API key is set
 	if not M.options.api_key or M.options.api_key == "" then
-		vim.notify("squire: ANTHROPIC_API_KEY is not set", vim.log.levels.WARN)
+		vim.notify("squire: SQUIRE_LLM_API_KEY is not set", vim.log.levels.WARN)
 	end
 
 	-- Check timeout is reasonable

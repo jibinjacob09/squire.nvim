@@ -14,7 +14,7 @@ Supports Anthropic Claude out of the box, can be customized for other LLM's
 ```lua
 -- lazy.nvim
 {
-  "your-user/squire",
+  "jibinjacob09/squire.nvim",
   dependencies = { "nvim-lua/plenary.nvim" },
   event = "VeryLazy",
   config = function()
@@ -22,6 +22,8 @@ Supports Anthropic Claude out of the box, can be customized for other LLM's
   end,
 }
 ```
+
+The `config` block is required — `:SquireComplete` and the default keymaps are only registered when `setup()` runs.
 
 ## Usage
 
@@ -71,3 +73,4 @@ vim.keymap.set({ "i", "n" }, "<C-@>", "<Cmd>SquireComplete<CR>", { silent = true
 ## License
 
 MIT
+
