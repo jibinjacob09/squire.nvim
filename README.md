@@ -1,4 +1,4 @@
-# Code Copilot
+# Squire
 
 A Neovim plugin that provides AI-powered code completion using a local LLM (Ollama). Get intelligent, context-aware code suggestions displayed as inline ghost text.
 
@@ -24,11 +24,11 @@ A Neovim plugin that provides AI-powered code completion using a local LLM (Olla
 ```lua
 {
   dir = "~/.config/nvim/dev/code-copilot",  -- Adjust to your path
-  name = "code-copilot",
+  name = "squire",
   dependencies = { "nvim-lua/plenary.nvim" },
   event = "VeryLazy",
   config = function()
-    require("code-copilot").setup({
+    require("squire").setup({
       -- Optional: override defaults
       model = "devstral",
       endpoint = "http://localhost:9000",
@@ -59,7 +59,7 @@ After triggering, you'll see a gray ghost text suggestion that you can accept wi
 ### Default Configuration
 
 ```lua
-require("code-copilot").setup({
+require("squire").setup({
   -- Ollama settings
   model = "devstral",
   endpoint = "http://localhost:9000",
@@ -105,7 +105,7 @@ require("code-copilot").setup({
 ### Example: Custom Configuration
 
 ```lua
-require("code-copilot").setup({
+require("squire").setup({
   model = "codellama:13b",
   endpoint = "http://localhost:11434",
   temperature = 0.3,
@@ -124,11 +124,11 @@ require("code-copilot").setup({
 You can call these functions directly from Lua:
 
 ```vim
-:lua require("code-copilot").trigger_completion()
-:lua require("code-copilot").accept_suggestion()
-:lua require("code-copilot").dismiss_suggestion()
-:lua require("code-copilot").has_suggestion()
-:lua require("code-copilot").cancel()
+:lua require("squire").trigger_completion()
+:lua require("squire").accept_suggestion()
+:lua require("squire").dismiss_suggestion()
+:lua require("squire").has_suggestion()
+:lua require("squire").cancel()
 ```
 
 ### Creating Custom Commands
@@ -136,12 +136,12 @@ You can call these functions directly from Lua:
 Add to your config:
 
 ```lua
-vim.api.nvim_create_user_command("Copilot", function()
-  require("code-copilot").trigger_completion()
+vim.api.nvim_create_user_command("Squire", function()
+  require("squire").trigger_completion()
 end, { desc = "Trigger code completion" })
 ```
 
-Then use `:Copilot` to trigger completions.
+Then use `:Squire` to trigger completions.
 
 ## Default Keymaps
 
@@ -177,7 +177,7 @@ Then use `:Copilot` to trigger completions.
 
 1. Verify no conflicts: `:verbose imap <Tab>`
 2. Try custom keymaps if defaults conflict
-3. Check if plugin is loaded: `:lua print(vim.inspect(require("code-copilot")))`
+3. Check if plugin is loaded: `:lua print(vim.inspect(require("squire")))`
 
 ### Suggestions include markdown code fences
 

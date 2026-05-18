@@ -1,8 +1,9 @@
 local M = {}
 
-local copilot = require("code-copilot.claude") -- anthropic/claude is the LLM
-local ui = require("code-copilot.ui")
-local config = require("code-copilot.config")
+local prompt = require("squire.prompt")
+local provider = require("squire.provider")
+local ui = require("squire.ui")
+local config = require("squire.config")
 
 -- State to track in-flight requests
 local current_request = {
@@ -25,23 +26,7 @@ local function gather_context(bufnr)
     
     -- Get filetype
     local filetype = vim.api.nvim_buf_get_option(bufnr, "filetype")
-    
-    -- Get files in current directory
-    local files = {}
-    local cwd = vim.fn.getcwd()
-    
-    -- Use vim.fn.glob to get files (no subdirectories)
-    local file_list = vim.fn.glob(cwd .. "/*", false, true)
-    
-    for _, filepath in ipairs(file_list) do
-        -- Get just the filename, not full path
-        local filename = vim.fn.fnamemodify(filepath, ":t")
-        -- Filter out directories (only include files)
-        if vim.fn.isdirectory(filepath) == 0 then
-            table.insert(files, filename)
-        end
-    end
-    
+
     return {
         file_content = file_content,
         cursor = {
@@ -49,7 +34,6 @@ local function gather_context(bufnr)
             col = cursor[2],   -- 0-based
         },
         filetype = filetype,
-        files = files,
     }
 end
 
@@ -72,31 +56,37 @@ function M.request_completion(bufnr)
     -- Mark request as active
     current_request.active = true
     current_request.bufnr = bufnr
-    
+
     -- Gather context
     local context = gather_context(bufnr)
-    
-    -- Build prompt
-    local prompt = copilot.build_prompt(context)
-    
+
+    -- Build prompt + select provider
+    local prompt_text = prompt.build_prompt(context)
+    local system_text = prompt.system_prompt()
+    local backend = provider.get(config.get().provider)
+
     if config.get().debug then
         vim.notify("Requesting completion...", vim.log.levels.INFO)
     end
-    
+
     -- Get current cursor position for showing suggestion
     local cursor_pos = vim.api.nvim_win_get_cursor(0)
-    
-    -- Request completion from Ollama
-    copilot.request_completion(config.get(), prompt, function(err, response)
-        -- Mark request as complete
+
+    -- Show in-flight indicator with estimated input tokens (~chars/4)
+    local tokens_sent = math.ceil((#system_text + #prompt_text) / 4)
+    ui.show_progress(bufnr, cursor_pos[1], cursor_pos[2], tokens_sent)
+
+    backend.complete(config.get(), prompt_text, system_text, function(err, raw)
+        -- Mark request as complete and clear the in-flight indicator
         current_request.active = false
         current_request.bufnr = nil
-        
+        ui.clear_progress(bufnr)
+
         if err then
-            vim.notify("LLM Copilot error: " .. err, vim.log.levels.ERROR)
+            vim.notify("Squire error: " .. err, vim.log.levels.ERROR)
             return
         end
-        
+
         -- Check if buffer is still valid and we're still in it
         if not vim.api.nvim_buf_is_valid(bufnr) then
             if config.get().debug then
@@ -104,17 +94,17 @@ function M.request_completion(bufnr)
             end
             return
         end
-        
+
         if vim.api.nvim_get_current_buf() ~= bufnr then
             if config.get().debug then
                 vim.notify("Switched buffers, ignoring response", vim.log.levels.DEBUG)
             end
             return
         end
-        
-        -- Show suggestion as ghost text
-        ui.show_suggestion(bufnr, cursor_pos[1], cursor_pos[2], response)
-        
+
+        local cleaned = prompt.strip_code_fences(raw)
+        ui.show_suggestion(bufnr, cursor_pos[1], cursor_pos[2], cleaned)
+
         if config.get().debug then
             vim.notify("Suggestion displayed", vim.log.levels.INFO)
         end
@@ -124,9 +114,10 @@ end
 -- Cancel any in-flight request
 function M.cancel_request()
     if current_request.active then
+        ui.clear_progress(current_request.bufnr)
         current_request.active = false
         current_request.bufnr = nil
-        
+
         if config.get().debug then
             vim.notify("Request cancelled", vim.log.levels.DEBUG)
         end
