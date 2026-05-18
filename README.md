@@ -1,6 +1,8 @@
 # Squire
 
-On-demand AI powered code completion plugin for Neovim.
+A simple on-demand AI powered code completion plugin for Neovim. 
+Run AI code completion only when and where you want it, with minimial token and context usage.
+
 Supports Anthropic Claude out of the box, can be customized for other LLM's
 
 ## Requirements
