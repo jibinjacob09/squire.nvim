@@ -214,27 +214,24 @@ function M.accept_suggestion()
 	return true
 end
 
--- Setup keymaps for accepting/dismissing suggestions
--- @param bufnr number: Buffer number to set keymaps on
+-- Setup global keymaps for accepting/dismissing suggestions.
+-- Global (not buffer-local) so we don't depend on BufEnter firing after lazy
+-- plugin load. Each map no-ops to the default key when no suggestion is active.
 -- @param config table: Configuration with keymaps
-function M.setup_keymaps(bufnr, config)
+function M.setup_keymaps(config)
 	local accept_key = config.keymaps.accept or "<Tab>"
 	local dismiss_key = config.keymaps.dismiss or "<Esc>"
 
-	-- Accept keymaps (both normal and insert mode)
-	-- Use vim.schedule to defer buffer modification
 	vim.keymap.set("i", accept_key, function()
 		if M.has_suggestion() then
 			vim.schedule(function()
 				M.accept_suggestion()
 			end)
 		else
-			-- No suggestion, simulate default Tab behavior
 			local key = vim.api.nvim_replace_termcodes(accept_key, true, false, true)
 			vim.api.nvim_feedkeys(key, "n", false)
 		end
 	end, {
-		buffer = bufnr,
 		noremap = true,
 		silent = true,
 		desc = "Squire: Accept suggestion",
@@ -242,27 +239,25 @@ function M.setup_keymaps(bufnr, config)
 
 	vim.keymap.set("n", accept_key, function()
 		if M.accept_suggestion() then
-			-- After accepting, enter insert mode at end of insertion
 			vim.cmd("startinsert!")
+		else
+			local key = vim.api.nvim_replace_termcodes(accept_key, true, false, true)
+			vim.api.nvim_feedkeys(key, "n", false)
 		end
 	end, {
-		buffer = bufnr,
 		noremap = true,
 		silent = true,
 		desc = "Squire: Accept suggestion",
 	})
 
-	-- Dismiss keymaps (both normal and insert mode)
 	vim.keymap.set("i", dismiss_key, function()
 		if M.has_suggestion() then
 			M.clear_suggestion()
 		else
-			-- No suggestion, simulate default Esc behavior
 			local key = vim.api.nvim_replace_termcodes(dismiss_key, true, false, true)
 			vim.api.nvim_feedkeys(key, "n", false)
 		end
 	end, {
-		buffer = bufnr,
 		noremap = true,
 		silent = true,
 		desc = "Squire: Dismiss suggestion",
@@ -271,9 +266,11 @@ function M.setup_keymaps(bufnr, config)
 	vim.keymap.set("n", dismiss_key, function()
 		if M.has_suggestion() then
 			M.clear_suggestion()
+		else
+			local key = vim.api.nvim_replace_termcodes(dismiss_key, true, false, true)
+			vim.api.nvim_feedkeys(key, "n", false)
 		end
 	end, {
-		buffer = bufnr,
 		noremap = true,
 		silent = true,
 		desc = "Squire: Dismiss suggestion",

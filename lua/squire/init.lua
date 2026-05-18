@@ -67,7 +67,7 @@ function M.setup(user_config)
 	end, { desc = "run healthcheck on squire app" })
 end
 
--- Setup global keymaps for manual trigger
+-- Setup global keymaps: manual trigger plus accept/dismiss.
 function M.setup_keymaps()
 	local cfg = config.get()
 	local manual_key = cfg.keymaps.manual or "<leader><space>"
@@ -91,23 +91,14 @@ function M.setup_keymaps()
 		silent = true,
 		desc = "Squire: Trigger completion",
 	})
+
+	-- Accept/dismiss are global so they bind to the current buffer even when
+	-- setup() runs after BufEnter (e.g. lazy.nvim's `event = "VeryLazy"`).
+	ui.setup_keymaps(cfg)
 end
 
--- Setup autocmds for buffer-specific keymaps
 function M.setup_autocmds()
 	local group = vim.api.nvim_create_augroup("Squire", { clear = true })
-
-	-- Setup accept/dismiss keymaps when entering a buffer
-	vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter" }, {
-		group = group,
-		callback = function(args)
-			local bufnr = args.buf
-
-			-- Setup UI keymaps (Tab/Esc) for this buffer
-			ui.setup_keymaps(bufnr, config.get())
-		end,
-		desc = "Setup Squire keymaps for buffer",
-	})
 
 	-- Clear suggestions when leaving insert mode
 	vim.api.nvim_create_autocmd("InsertLeave", {
