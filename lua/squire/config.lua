@@ -7,7 +7,7 @@ M.defaults = {
 
 	-- Claude settings
 	api_key = os.getenv("SQUIRE_LLM_API_KEY"),
-	model = "claude-sonnet-4-20250514",
+	model = "claude-sonnet-4-6",
 	temperature = 0.2,
 	max_tokens = 2000,
 	timeout_ms = 15000,
