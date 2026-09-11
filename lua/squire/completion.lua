@@ -55,7 +55,7 @@ local function gather_context(bufnr)
     )
     
     -- Ensure we include at least some lines before cursor unless cursor is at top
-    local after_limit = math.max(max_after, max_lines // 4)
+    local after_limit = math.max(max_after, max_lines / 4)
     local after_count = math.min(after_limit, #all_lines - cursor_line_1based)
     
     local lines_after = vim.list_slice(all_lines, cursor_line_1based, cursor_line_1based + after_count)
