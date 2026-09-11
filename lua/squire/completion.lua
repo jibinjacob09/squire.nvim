@@ -11,34 +11,60 @@ local current_request = {
     bufnr = nil,
 }
 
--- Global state for auto-trigger (not buffer-local)
+-- Auto-trigger state (module-level)
 local auto_trigger_state = {
     timer = nil,
 }
 
--- Gather context from current buffer
+-- Gather context from current buffer with optional truncation
 -- @param bufnr number: Buffer number
--- @return table: Context object with file_content, cursor, filetype, files
+-- @return table: Context object with truncated lines_before/after, cursor, filetype
 local function gather_context(bufnr)
-    bufnr = bufnr or vim.api.nvim_get_current_buf()
+    bufnr = bufnr or vim.nvim_get_current_buf() -- Use nvim_get_current_buf for consistency
     
-    -- Get all lines from buffer
-    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-    local file_content = table.concat(lines, "\n")
+    -- Get all lines from buffer  
+    local all_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     
-    -- Get cursor position
-    local cursor = vim.api.nvim_win_get_cursor(0)
+    -- Cursor line number (convert to 1-based for calculations)
+    local cursor_pos = vim.api.nvim_win_get_cursor(0)
+    local cursor_line_1based = cursor_pos[1]
     
-    -- Get filetype
-    local filetype = vim.api.nvim_buf_get_option(bufnr, "filetype")
-
+    local max_lines = config.get().max_lines
+    
+    if #all_lines <= max_lines then
+        -- No truncation needed
+        return {
+            filetype = vim.api.nvim_buf_get_option(bufnr, "filetype"),
+            lines_before = table.concat(all_lines, "\n"),
+            lines_after = "",
+        }
+    end
+    
+    -- Calculate how many lines above/below to include (balance around cursor)
+    local available = #all_lines - max_lines + 1
+    local margin = math.floor(available / 2)
+    
+    -- Ensure at least 1 line before cursor if possible
+    local start_row = math.max(0, math.min(cursor_line_1based - 1, margin))
+    local lines_to_gather = #all_lines - start_row
+    
+    -- Balance: use more lines after cursor than before
+    local max_after = math.min(
+        max_lines - (2 * start_row),  -- remaining slots after using start_rows
+        #all_lines - cursor_line_1based + 1
+    )
+    
+    -- Ensure we include at least some lines before cursor unless cursor is at top
+    local after_limit = math.max(max_after, max_lines // 4)
+    local after_count = math.min(after_limit, #all_lines - cursor_line_1based)
+    
+    local lines_after = vim.list_slice(all_lines, cursor_line_1based, cursor_line_1based + after_count)
+    local lines_before = vim.list_slice(all_lines, start_row, cursor_line_1based - 1)
+    
     return {
-        file_content = file_content,
-        cursor = {
-            line = cursor[1],  -- 1-based
-            col = cursor[2],   -- 0-based
-        },
-        filetype = filetype,
+        filetype = vim.api.nvim_buf_get_option(bufnr, "filetype"),
+        lines_before = table.concat(lines_before, "\n") or "",
+        lines_after = table.concat(lines_after, "\n") or "",
     }
 end
 
@@ -62,28 +88,29 @@ function M.request_completion(bufnr)
     current_request.active = true
     current_request.bufnr = bufnr
 
-    -- Gather context
-    local context = gather_context(bufnr)
 
-    -- Build prompt + select provider
-    local prompt_text = prompt.build_prompt(context)
-    local system_text = prompt.system_prompt()
-    local backend = provider.get(config.get().provider)
-
-    if config.get().debug then
+    if cfg.debug then
         vim.notify("Requesting completion...", vim.log.levels.INFO)
     end
 
-    -- Get current cursor position for showing suggestion
-    local cursor_pos = vim.api.nvim_win_get_cursor(0)
+    local context = gather_context()
+
+    local has_provider_options = cfg and cfg.provider_options and next(cfg.provider_options) ~= nil
+    
+    if has_provider_options then
+        vim.list_extend(cfg, cfg.provider_options)
+    end
+
+    -- Build prompt using either custom template or default FIM style
+    local prompt_text = (require("squire.prompt")).build_prompt(context, cfg)
 
     -- Show in-flight indicator with estimated input tokens (~chars/4)
-    local tokens_sent = math.ceil((#system_text + #prompt_text) / 4)
+    local tokens_sent = math.ceil((vim.len(prompt_text) + 100) / 4)  -- system prompt assumed ~100 chars
     ui.show_progress(bufnr, cursor_pos[1], cursor_pos[2], tokens_sent)
 
-    backend.complete(config.get(), prompt_text, system_text, function(err, raw)
-        -- Mark request as complete and clear the in-flight indicator
-        current_request.active = false
+    local provider = provider.get(cfg.provider)
+    provider.complete(cfg, prompt_text, function(err, raw)
+        -- Mark request as complete and clear the in-flight indicator        current_request.active = false
         current_request.bufnr = nil
         ui.clear_progress(bufnr)
 

@@ -51,6 +51,12 @@ M.defaults = {
   auto_trigger = false,
   debounce_ms = 300,
   comment_prefixes = {}, -- e.g., { "#", "//", "--" } — empty by default (fire on everything)
+
+  -- Code context limit for prompt
+  max_lines = 40, -- maximum lines of code to include in completion request
+
+  -- Provider-specific config overrides (merged per provider)
+  provider_options = {},
 }
 
 -- Current active configuration
@@ -71,11 +77,6 @@ end
 
 -- Validate configuration values
 function M.validate()
-	-- Check API key is set
-	if not M.options.api_key or M.options.api_key == "" then
-		vim.notify("squire: SQUIRE_LLM_API_KEY is not set", vim.log.levels.WARN)
-	end
-
 	-- Check timeout is reasonable
 	if M.options.timeout_ms < 1000 then
 		vim.notify("squire: timeout_ms is very low, may cause issues", vim.log.levels.WARN)
@@ -91,6 +92,28 @@ function M.validate()
 		vim.notify("squire: trigger_filetypes must be a table", vim.log.levels.ERROR)
 		M.options.trigger_filetypes = M.defaults.trigger_filetypes
 	end
+
+  -- Ensure max_lines is positive integer
+  local ml = type(M.options.max_lines) == "number" and math.floor(M.options.max_lines) or 40
+  if ml < 1 then
+    vim.notify("squire: max_lines must be a positive integer", vim.log.levels.WARN)
+  end
+
+  -- Anthropic requires API key
+  if M.options.provider == "anthropic" and (not M.options.api_key or M.options.api_key == "") then
+    vim.notify("squire: SQUIRE_LLM_API_KEY is not set for Anthropic", vim.log.levels.WARN)
+  end
+
+  -- Ollama requires base_url and model/model_name  
+  if M.options.provider == "ollama" then
+    if not M.options.base_url then
+      vim.notify("Ollama: base_url is required", vim.log.levels.WARN)
+    end
+    local ollama_model = M.options.model or M.options.model_name
+    if not ollama_model then
+      vim.notify("Ollama: model or model_name is required", vim.log.levels.WARN)
+    end
+  end
 end
 
 -- Check if current filetype should have squire enabled
