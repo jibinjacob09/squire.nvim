@@ -59,6 +59,35 @@ require("squire").setup({
   },
 
   debug = false,                                      -- verbose vim.notify output
+
+  -- Auto-trigger settings (experimental)
+  auto_trigger = true,                                 -- enable automatic completion on typing
+  debounce_ms = 300,                                   -- wait 300ms after last keystroke before triggering
+  comment_prefixes = {},                               -- skip triggering when line starts with these chars (e.g., { "#", "//" })
+})
+```
+
+## Usage Examples
+
+### Auto-trigger completion on typing
+By default, completions trigger automatically when you finish typing for 300ms:
+
+- Only fires in insert mode while typing content
+- Skips navigation keys (`h`, `j`, `k`, `l`, arrows) and most control keys
+- Resets the debounce timer on each new keystroke
+- Disabled for lines starting with configured comment prefixes
+
+### Disable auto-trigger
+```lua
+require("squire").setup({
+  auto_trigger = false,                               -- rely on manual trigger only
+})
+```
+
+### Skip certain comments or code patterns
+```lua
+require("squire").setup({
+  comment_prefixes = { "#", "//", "--" },              -- skip triggering when line starts with these
 })
 ```
 

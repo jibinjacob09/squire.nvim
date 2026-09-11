@@ -44,8 +44,13 @@ M.defaults = {
 		"zsh",
 	},
 
-	-- Debug mode
-	debug = false,
+  -- Debug mode
+  debug = false,
+
+  -- Auto-trigger settings
+  auto_trigger = false,
+  debounce_ms = 300,
+  comment_prefixes = {}, -- e.g., { "#", "//", "--" } — empty by default (fire on everything)
 }
 
 -- Current active configuration

@@ -22,6 +22,7 @@ function M.setup(user_config)
 	-- Setup keymaps and autocmds
 	M.setup_keymaps()
 	M.setup_autocmds()
+	completion.setup_autocmds()
 
 	is_setup = true
 
@@ -135,29 +136,11 @@ function M.trigger_completion()
 	completion.request_completion(bufnr)
 end
 
--- Accept current suggestion (exposed for custom keymaps)
-function M.accept_suggestion()
-	return ui.accept_suggestion()
-end
-
--- Dismiss current suggestion (exposed for custom keymaps)
-function M.dismiss_suggestion()
-	ui.clear_suggestion()
-end
-
--- Check if there's an active suggestion
-function M.has_suggestion()
-	return ui.has_suggestion()
-end
-
--- Cancel any in-flight request
-function M.cancel()
-	completion.cancel_request()
-end
-
--- Get current configuration
-function M.get_config()
-	return config.get()
-end
+-- Exposed API
+M.cancel = completion.cancel_request
+M.accept_suggestion = ui.accept_suggestion
+M.dismiss_suggestion = ui.clear_suggestion
+M.has_suggestion = ui.has_suggestion
+M.get_config = function() return config.get() end
 
 return M
