@@ -8,8 +8,6 @@ M.defaults = {
 	-- Claude settings
 	api_key = os.getenv("SQUIRE_LLM_API_KEY"),
 	model = "claude-sonnet-4-6",
-	temperature = 0.2,
-	max_tokens = 2000,
 	timeout_ms = 15000,
 
 	-- Keymaps
@@ -56,7 +54,11 @@ M.defaults = {
   max_lines = 40, -- maximum lines of code to include in completion request
 
   -- Provider-specific config overrides (merged per provider)
-  provider_options = {},
+  provider_options = {
+	temperature = 0.2,
+	max_tokens = 2000,
+    top_p = 0.9,
+  },
 }
 
 -- Current active configuration

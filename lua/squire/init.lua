@@ -4,6 +4,7 @@ local config = require("squire.config")
 local completion = require("squire.completion")
 local provider = require("squire.provider")
 local ui = require("squire.ui")
+local API_KEY_NOT_REQUIRED = { ollama = true }
 
 -- Track if plugin has been setup
 local is_setup = false
@@ -11,129 +12,130 @@ local is_setup = false
 -- Setup the plugin
 -- @param user_config table|nil: User configuration
 function M.setup(user_config)
-	if is_setup then
-		vim.notify("squire is already setup", vim.log.levels.WARN)
-		return
-	end
+    if is_setup then
+        vim.notify("squire is already setup", vim.log.levels.WARN)
+        return
+    end
 
-	-- Initialize configuration
-	config.setup(user_config)
+    -- Initialize configuration
+    config.setup(user_config)
 
-	-- Setup keymaps and autocmds
-	M.setup_keymaps()
-	M.setup_autocmds()
-	completion.setup_autocmds()
+    -- Setup keymaps and autocmds
+    M.setup_keymaps()
+    M.setup_autocmds()
+    completion.setup_autocmds()
 
-	is_setup = true
+    is_setup = true
 
-	if config.get().debug then
-		vim.notify("squire initialized successfully", vim.log.levels.INFO)
-	end
+    if config.get().debug then
+        vim.notify("squire initialized successfully", vim.log.levels.INFO)
+    end
 
-	-- Create user command for manual triggering
-	vim.api.nvim_create_user_command("SquireComplete", function()
-		M.trigger_completion()
-	end, {
-		desc = "Manually trigger Squire completion",
-	})
-	--
-	-- Create user command for manual testing
-	vim.api.nvim_create_user_command("SquireHealthcheck", function()
-		vim.notify("Squire: running healthcheck...", vim.log.levels.INFO)
+    -- Create user command for manual triggering
+    vim.api.nvim_create_user_command("SquireComplete", function()
+        M.trigger_completion()
+    end, {
+        desc = "Manually trigger Squire completion",
+    })
+    --
+    -- Create user command for manual testing
+    vim.api.nvim_create_user_command("SquireHealthcheck", function()
+        local cfg = config.get()
+        vim.notify("Squire:,running healthcheck against " .. cfg.provider, vim.log.levels.INFO)
+        if not API_KEY_NOT_REQUIRED[cfg.provider] and (not cfg.api_key or cfg.api_key == "") then
+            vim.notify("Squire: app OK, but API key is not configured (set SQUIRE_LLM_API_KEY)", vim.log.levels.ERROR)
+            return
+        end
 
-		local cfg = config.get()
-		if not cfg.api_key or cfg.api_key == "" then
-			vim.notify("Squire: app OK, but API key is not configured (set SQUIRE_LLM_API_KEY)", vim.log.levels.ERROR)
-			return
-		end
+        local ping_cfg = vim.tbl_extend("force", cfg, {
+            max_tokens = 1,
+            temperature = 0,
+        })
 
-		local ping_cfg = vim.tbl_extend("force", cfg, {
-			max_tokens = 1,
-			temperature = 0,
-		})
+        vim.notify("Pinging " .. cfg.provider, vim.log.levels.INFO)
 
-		local ok, prov = pcall(provider.get, cfg.provider)
-		if not ok then
-			vim.notify("Squire: app OK, API FAILED — " .. tostring(prov), vim.log.levels.ERROR)
-			return
-		end
+        local ok, prov = pcall(provider.get, cfg.provider)
+        if not ok then
+            vim.notify("Squire: app OK, API FAILED — " .. tostring(prov), vim.log.levels.ERROR)
+            return
+        end
 
-		prov.complete(ping_cfg, "ping", "Respond with the single word: pong", function(err, _)
-			if err then
-				vim.notify("Squire: app OK, API FAILED — " .. err, vim.log.levels.ERROR)
-			else
-				vim.notify("Squire: app OK, API OK", vim.log.levels.INFO)
-			end
-		end)
-	end, { desc = "run healthcheck on squire app" })
+        prov.complete(ping_cfg, "ping", "Respond with the single word: pong", function(err, _)
+            if err then
+                vim.notify("Squire: app OK, API FAILED — " .. err, vim.log.levels.ERROR)
+            else
+                vim.notify("Squire: app OK, API OK", vim.log.levels.INFO)
+            end
+        end)
+    end, { desc = "run healthcheck on squire app" })
 end
 
 -- Setup global keymaps: manual trigger plus accept/dismiss.
 function M.setup_keymaps()
-	local cfg = config.get()
-	local manual_key = cfg.keymaps.manual or "<leader><space>"
+    local cfg = config.get()
+    local manual_key = cfg.keymaps.manual or "<leader><space>"
 
-	-- Manual trigger in insert mode
-	vim.keymap.set("i", manual_key, function()
-		M.trigger_completion()
-		return ""
-	end, {
-		expr = true,
-		noremap = true,
-		silent = true,
-		desc = "Squire: Trigger completion",
-	})
+    -- Manual trigger in insert mode
+    vim.keymap.set("i", manual_key, function()
+        M.trigger_completion()
+        return ""
+    end, {
+        expr = true,
+        noremap = true,
+        silent = true,
+        desc = "Squire: Trigger completion",
+    })
 
-	-- Manual trigger in normal mode
-	vim.keymap.set("n", manual_key, function()
-		M.trigger_completion()
-	end, {
-		noremap = true,
-		silent = true,
-		desc = "Squire: Trigger completion",
-	})
+    -- Manual trigger in normal mode
+    vim.keymap.set("n", manual_key, function()
+        M.trigger_completion()
+    end, {
+        noremap = true,
+        silent = true,
+        desc = "Squire: Trigger completion",
+    })
 
-	-- Accept/dismiss are global so they bind to the current buffer even when
-	-- setup() runs after BufEnter (e.g. lazy.nvim's `event = "VeryLazy"`).
-	ui.setup_keymaps(cfg)
+    -- Accept/dismiss are global so they bind to the current buffer even when
+    -- setup() runs after BufEnter (e.g. lazy.nvim's `event = "VeryLazy"`).
+    ui.setup_keymaps(cfg)
 end
 
 function M.setup_autocmds()
-	local group = vim.api.nvim_create_augroup("Squire", { clear = true })
+    local group = vim.api.nvim_create_augroup("Squire", { clear = true })
 
-	-- Clear suggestions when leaving insert mode
-	vim.api.nvim_create_autocmd("InsertLeave", {
-		group = group,
-		callback = function()
-			ui.clear_suggestion()
-		end,
-		desc = "Clear Squire suggestions on insert leave",
-	})
+    -- Clear suggestions when leaving insert mode
+    vim.api.nvim_create_autocmd("InsertLeave", {
+        group = group,
+        callback = function()
+            ui.clear_suggestion()
+        end,
+        desc = "Clear Squire suggestions on insert leave",
+    })
 
-	-- Clear suggestions when buffer is closed
-	vim.api.nvim_create_autocmd("BufDelete", {
-		group = group,
-		callback = function(args)
-			ui.clear_suggestion(args.buf)
-		end,
-		desc = "Clear Squire suggestions on buffer delete",
-	})
+    -- Clear suggestions when buffer is closed
+    vim.api.nvim_create_autocmd("BufDelete", {
+        group = group,
+        callback = function(args)
+            ui.clear_suggestion(args.buf)
+        end,
+        desc = "Clear Squire suggestions on buffer delete",
+    })
 end
 
 -- Trigger completion manually
 function M.trigger_completion()
-	local bufnr = vim.api.nvim_get_current_buf()
+    local bufnr = vim.api.nvim_get_current_buf()
 
-	-- Check if already requesting
-	if completion.is_requesting() then
-		if config.get().debug then
-			vim.notify("Completion request already in progress", vim.log.levels.DEBUG)
-		end
-		return
-	end
+    -- Check if already requesting
+    if completion.is_requesting() then
+        if config.get().debug then
+            vim.notify("Completion request already in progress", vim.log.levels.DEBUG)
+        end
+        return
+    end
 
-	-- Request completion
-	completion.request_completion(bufnr)
+    -- Request completion
+    completion.request_completion(bufnr)
 end
 
 -- Exposed API

@@ -1,15 +1,7 @@
 local M = {}
 
-local SYSTEM_PROMPT = "You are an accurate, efficent code completion engine. Output ONLY the raw code to be inserted at the cursor. No explanations, no markdown fences, no commentary — just the code. Avoid importing unneeded libraries, prioritze efficent but readable code."
-
--- Default FIM-style template for Ollama models like qwen2.5-coder
--- Uses triple-quoted strings (FIM format) with cursor marker
--- @param before string: Context before cursor
--- @param after string: Context after cursor
--- @return string: Formatted prompt ready for Ollama API
-function M.default_fim_template(before, after)
-    return '"""' .. before .. '"""' .. '"""' .. after .. '"""\n\n'
-end
+local SYSTEM_PROMPT =
+"You are an accurate, efficent code completion engine. Output ONLY the raw code to be inserted at the cursor. No explanations, no markdown fences, no commentary — just the code. Avoid importing unneeded libraries, prioritze efficent but readable code."
 
 -- Strip markdown code fences from response
 -- @param text string: Raw response from LLM
@@ -31,9 +23,7 @@ end
 -- @param context table: Contains lines_before, lines_after, filetype
 -- @param cfg table|nil: Optional config with optional prompt_template function
 -- @return string: The formatted prompt
-function M.build_prompt(context, cfg)
-    local custom_template = cfg and cfg.prompt_template
-
+function M.build_prompt(context, custom_template)
     if custom_template and type(custom_template) == "function" then
         return custom_template(
             context.lines_before or "",
@@ -41,8 +31,12 @@ function M.build_prompt(context, cfg)
         )
     end
 
-    -- Use default FIM template (pure FIM format for Ollama)
-    return M.default_fim_template(context.lines_before, context.lines_after)
+    local _prompt = "Given the prefix ```" ..
+        context.lines_before ..
+        "``` {cursor} and suffix ```" ..
+        context.lines_after .. "``` output only the missing middle. Do not repeat the prefix or suffix."
+    return _prompt
 end
 
 return M
+

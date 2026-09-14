@@ -1,7 +1,6 @@
 local M = {}
 
 local prompt = require("squire.prompt")
-local provider = require("squire.provider")
 local ui = require("squire.ui")
 local config = require("squire.config")
 
@@ -19,60 +18,61 @@ local auto_trigger_state = {
 -- Gather context from current buffer with optional truncation
 -- @param bufnr number: Buffer number
 -- @return table: Context object with truncated lines_before/after, cursor, filetype
+
 local function gather_context(bufnr)
-    bufnr = bufnr or vim.nvim_get_current_buf() -- Use nvim_get_current_buf for consistency
-    
-    -- Get all lines from buffer  
+    bufnr = bufnr or vim.api.nvim_get_current_buf()
+
     local all_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-    
-    -- Cursor line number (convert to 1-based for calculations)
-    local cursor_pos = vim.api.nvim_win_get_cursor(0)
-    local cursor_line_1based = cursor_pos[1]
-    
+    local filetype = vim.api.nvim_buf_get_option(bufnr, "filetype")
+    local cursor_line = vim.api.nvim_win_get_cursor(0)[1] -- 1-based
+
     local max_lines = config.get().max_lines
-    
+
     if #all_lines <= max_lines then
-        -- No truncation needed
         return {
-            filetype = vim.api.nvim_buf_get_option(bufnr, "filetype"),
+            filetype = filetype,
             lines_before = table.concat(all_lines, "\n"),
             lines_after = "",
         }
     end
-    
-    -- Calculate how many lines above/below to include (balance around cursor)
-    local available = #all_lines - max_lines + 1
-    local margin = math.floor(available / 2)
-    
-    -- Ensure at least 1 line before cursor if possible
-    local start_row = math.max(0, math.min(cursor_line_1based - 1, margin))
-    local lines_to_gather = #all_lines - start_row
-    
-    -- Balance: use more lines after cursor than before
-    local max_after = math.min(
-        max_lines - (2 * start_row),  -- remaining slots after using start_rows
-        #all_lines - cursor_line_1based + 1
-    )
-    
-    -- Ensure we include at least some lines before cursor unless cursor is at top
-    local after_limit = math.max(max_after, max_lines / 4)
-    local after_count = math.min(after_limit, #all_lines - cursor_line_1based)
-    
-    local lines_after = vim.list_slice(all_lines, cursor_line_1based, cursor_line_1based + after_count)
-    local lines_before = vim.list_slice(all_lines, start_row, cursor_line_1based - 1)
-    
+
+    -- Lines actually available on each side of the cursor.
+    -- "after" includes the cursor's own line (it's the start of the suffix).
+    local before_avail = cursor_line - 1
+    local after_avail = #all_lines - cursor_line + 1
+
+    -- Bias toward "before": give it 60/40 of the budget by default.
+    local before_budget = math.floor(max_lines * 0.6)
+    local after_budget = max_lines - before_budget
+
+    local before_count = math.min(before_avail, before_budget)
+    local after_count = math.min(after_avail, after_budget)
+
+    -- If either side has unused budget, let the other side use the slack.
+    local unused_before = before_budget - before_count
+    local unused_after = after_budget - after_count
+    if unused_before > 0 then
+        after_count = math.min(after_avail, after_count + unused_before)
+    elseif unused_after > 0 then
+        before_count = math.min(before_avail, before_count + unused_after)
+    end
+
+    local before_lines = vim.list_slice(all_lines, cursor_line - before_count, cursor_line - 1)
+    local after_lines = vim.list_slice(all_lines, cursor_line, cursor_line - 1 + after_count)
+
     return {
-        filetype = vim.api.nvim_buf_get_option(bufnr, "filetype"),
-        lines_before = table.concat(lines_before, "\n") or "",
-        lines_after = table.concat(lines_after, "\n") or "",
+        filetype = filetype,
+        lines_before = table.concat(before_lines, "\n"),
+        lines_after = table.concat(after_lines, "\n"),
     }
 end
 
 -- Request completion from LLM
 -- @param bufnr number|nil: Buffer number (defaults to current)
 function M.request_completion(bufnr)
+    local cfg = config.get()
     bufnr = bufnr or vim.api.nvim_get_current_buf()
-    
+
     -- If there's already a request in flight, ignore
     if current_request.active then
         if config.get().debug then
@@ -80,10 +80,10 @@ function M.request_completion(bufnr)
         end
         return
     end
-    
+
     -- Clear any existing suggestion first
     ui.clear_suggestion(bufnr)
-    
+    local cursor_pos = vim.api.nvim_win_get_cursor(0)
     -- Mark request as active
     current_request.active = true
     current_request.bufnr = bufnr
@@ -96,20 +96,21 @@ function M.request_completion(bufnr)
     local context = gather_context()
 
     local has_provider_options = cfg and cfg.provider_options and next(cfg.provider_options) ~= nil
-    
+
     if has_provider_options then
         vim.list_extend(cfg, cfg.provider_options)
     end
 
     -- Build prompt using either custom template or default FIM style
-    local prompt_text = (require("squire.prompt")).build_prompt(context, cfg)
+    local system_prompt = prompt.system_prompt()
+    local prompt_text = prompt.build_prompt(context, cfg.provider_options.prompt_template)
 
     -- Show in-flight indicator with estimated input tokens (~chars/4)
-    local tokens_sent = math.ceil((vim.len(prompt_text) + 100) / 4)  -- system prompt assumed ~100 chars
+    local tokens_sent = math.ceil((#prompt_text + #system_prompt) / 4)
     ui.show_progress(bufnr, cursor_pos[1], cursor_pos[2], tokens_sent)
 
-    local provider = provider.get(cfg.provider)
-    provider.complete(cfg, prompt_text, function(err, raw)
+    local provider = (require("squire.provider")).get(cfg.provider)
+    provider.complete(cfg, prompt_text, system_prompt, function(err, raw)
         -- Mark request as complete and clear the in-flight indicator        current_request.active = false
         current_request.bufnr = nil
         ui.clear_progress(bufnr)
@@ -154,7 +155,7 @@ function M.cancel_request()
             vim.notify("Request cancelled", vim.log.levels.DEBUG)
         end
     end
-    
+
     -- Also cancel auto-trigger timer if started
     if auto_trigger_state.timer then
         auto_trigger_state.timer:close()
@@ -171,19 +172,19 @@ end
 -- Start the debounce timer for auto-trigger
 local function start_debounce_timer()
     local cfg = config.get()
-    
+
     -- Close existing timer if any
     if auto_trigger_state.timer then
         auto_trigger_state.timer:close()
         auto_trigger_state.timer = nil
     end
-    
+
     local callback = vim.schedule_wrap(function()
         if not current_request.active then
             M.request_completion()
         end
     end)
-    
+
     auto_trigger_state.timer = vim.uv.new_timer()
     auto_trigger_state.timer:start(
         cfg.debounce_ms,
@@ -198,13 +199,13 @@ local function is_typing_key(char)
     if char == "k" or char == "j" or char == "h" or char == "l" then return false end
     if char:match("^<up>$") or char:match("^<down>$") or char:match("^<left>$") or char:match("^<right>$") then return false end
     if char:match("^<home>$") or char:match("^<end>$") or char:match("^<pageup>$") or char:match("^<pagedown>$") then return false end
-    
+
     -- Delete/Backspace keys - these are technically typing but we'll let them through for natural deletion behavior
     if char == "<BS>" or char == "<Del>" then return true end
-    
+
     -- Control+Key combinations to be safe
     if char:match("^<c-") then return false end
-    
+
     -- Allow everything else (alphanumeric and most special keys)
     return true
 end
@@ -212,17 +213,17 @@ end
 -- Handle keypress event for auto-trigger
 local function handle_keypress(char)
     local cfg = config.get()
-    
+
     -- Skip if manual trigger or auto-trigger disabled
     if not cfg.auto_trigger then
         return false
     end
-    
+
     -- Filter out non-typing keys (navigation, control combinations)
     if not is_typing_key(char) then
         return false
     end
-    
+
     -- Check comment prefix (only if configured and char has content)
     local trimmed_char = vim.trim(char) or ""
     if cfg.comment_prefixes and trimmed_char ~= "" then
@@ -233,36 +234,36 @@ local function handle_keypress(char)
             end
         end
     end
-    
+
     -- Reset last key timestamp and start/reset debounce timer
     start_debounce_timer()
-    
+
     return true
 end
 
 -- Setup autocmds for auto-trigger registration
 function M.setup_autocmds()
     local group = vim.api.nvim_create_augroup("SquireAutoTrigger", { clear = false })
-    
+
     -- Track which buffers have been registered (to avoid duplicate autocmds)
     M._buffer_ids_with_autotriggers = {}
-    
+
     -- Start debounce timer on InsertEnter
     vim.api.nvim_create_autocmd("InsertEnter", {
         group = group,
         callback = function(args)
             local bufnr = args.buf
-            
+
             -- Skip if buffer already has autocmds registered
             for _, id in ipairs(M._buffer_ids_with_autotriggers) do
                 if id == args.buf then return end
             end
-            
+
             table.insert(M._buffer_ids_with_autotriggers, bufnr)
-            
+
             -- Only enable if in a supported filetype
             if not config.is_enabled_filetype() then return end
-            
+
             -- Register InsertLeave handler for this buffer
             vim.api.nvim_create_autocmd("InsertLeave", {
                 group = group,
@@ -272,19 +273,19 @@ function M.setup_autocmds()
                 end,
                 desc = "Cancel Squire request on insert leave",
             })
-            
+
             -- Register InsertCharPre handler for this buffer
             vim.api.nvim_create_autocmd("InsertCharPre", {
                 group = group,
                 buffer = bufnr,
                 callback = function(event)
                     local char = vim.api.nvim_replace_termcodes(event.data or "", true, false, true)
-                    
+
                     if handle_keypress(char) then
                         -- Key was typed, return true to allow it through
                         return true
                     end
-                    
+
                     -- Skip this keystroke (comment prefix matched) - still return true
                     return true
                 end,
