@@ -18,7 +18,6 @@ local auto_trigger_state = {
 -- Gather context from current buffer with optional truncation
 -- @param bufnr number: Buffer number
 -- @return table: Context object with truncated lines_before/after, cursor, filetype
-
 local function gather_context(bufnr)
     bufnr = bufnr or vim.api.nvim_get_current_buf()
 
@@ -75,7 +74,7 @@ function M.request_completion(bufnr)
 
     -- If there's already a request in flight, ignore
     if current_request.active then
-        if config.get().debug then
+        if cfg.debug then
             vim.notify("Request already in progress", vim.log.levels.DEBUG)
         end
         return
@@ -84,26 +83,28 @@ function M.request_completion(bufnr)
     -- Clear any existing suggestion first
     ui.clear_suggestion(bufnr)
     local cursor_pos = vim.api.nvim_win_get_cursor(0)
+
     -- Mark request as active
     current_request.active = true
     current_request.bufnr = bufnr
-
 
     if cfg.debug then
         vim.notify("Requesting completion...", vim.log.levels.INFO)
     end
 
-    local context = gather_context()
+    local context = gather_context(bufnr)
 
-    local has_provider_options = cfg and cfg.provider_options and next(cfg.provider_options) ~= nil
-
+    -- Merge provider_options (a dict, not an array) into cfg for this request.
+    -- vim.list_extend won't work here since provider_options has no array part.
+    local has_provider_options = cfg.provider_options and next(cfg.provider_options) ~= nil
     if has_provider_options then
-        vim.list_extend(cfg, cfg.provider_options)
+        cfg = vim.tbl_extend("force", cfg, cfg.provider_options)
     end
 
     -- Build prompt using either custom template or default FIM style
     local system_prompt = prompt.system_prompt()
-    local prompt_text = prompt.build_prompt(context, cfg.provider_options.prompt_template)
+    local template = cfg.provider_options and cfg.provider_options.prompt_template
+    local prompt_text = prompt.build_prompt(context, template)
 
     -- Show in-flight indicator with estimated input tokens (~chars/4)
     local tokens_sent = math.ceil((#prompt_text + #system_prompt) / 4)
@@ -111,7 +112,8 @@ function M.request_completion(bufnr)
 
     local provider = (require("squire.provider")).get(cfg.provider)
     provider.complete(cfg, prompt_text, system_prompt, function(err, raw)
-        -- Mark request as complete and clear the in-flight indicator        current_request.active = false
+        -- Mark request as complete and clear the in-flight indicator
+        current_request.active = false
         current_request.bufnr = nil
         ui.clear_progress(bufnr)
 
@@ -186,11 +188,8 @@ local function start_debounce_timer()
     end)
 
     auto_trigger_state.timer = vim.uv.new_timer()
-    auto_trigger_state.timer:start(
-        cfg.debounce_ms,
-        -1,
-        callback
-    )
+    -- repeat = 0 means one-shot; we rebuild the timer on every keystroke anyway
+    auto_trigger_state.timer:start(cfg.debounce_ms, 0, callback)
 end
 
 -- Filter out navigation and edit keys that shouldn't trigger completions
@@ -256,7 +255,7 @@ function M.setup_autocmds()
 
             -- Skip if buffer already has autocmds registered
             for _, id in ipairs(M._buffer_ids_with_autotriggers) do
-                if id == args.buf then return end
+                if id == bufnr then return end
             end
 
             table.insert(M._buffer_ids_with_autotriggers, bufnr)
@@ -280,14 +279,7 @@ function M.setup_autocmds()
                 buffer = bufnr,
                 callback = function(event)
                     local char = vim.api.nvim_replace_termcodes(event.data or "", true, false, true)
-
-                    if handle_keypress(char) then
-                        -- Key was typed, return true to allow it through
-                        return true
-                    end
-
-                    -- Skip this keystroke (comment prefix matched) - still return true
-                    return true
+                    handle_keypress(char)
                 end,
                 desc = "Handle character input for Squire auto-trigger",
             })
