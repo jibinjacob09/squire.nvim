@@ -101,10 +101,12 @@ function M.request_completion(bufnr)
         cfg = vim.tbl_extend("force", cfg, cfg.provider_options)
     end
 
-    -- Build prompt using either custom template or default FIM style
-    local system_prompt = prompt.system_prompt()
+    local system_prompt = "" 
     local template = cfg.provider_options and cfg.provider_options.prompt_template
     local prompt_text = prompt.build_prompt(context, template)
+    if not template then
+        system_prompt = prompt.system_prompt()
+    end
 
     -- Show in-flight indicator with estimated input tokens (~chars/4)
     local tokens_sent = math.ceil((#prompt_text + #system_prompt) / 4)
